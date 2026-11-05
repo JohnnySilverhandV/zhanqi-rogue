@@ -1,0 +1,1311 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { height: 100%; }
+
+/* ===== 尺寸唯一来源 =====
+   主界面只有「顶栏 + 棋盘 + 行动栏」三条，它们必须同宽才像一整列：
+   --cell  → 单个格子边长（只由屏幕高宽算出，别处不准再写尺寸）
+   --board-w = 8 格 + 7×2 格间距 + 4×2 内边距 = 棋盘实际宽度
+   --bar-w   → 顶栏 / 行动栏宽度：跟棋盘一样宽，但别窄到装不下按钮 */
+:root {
+  --cell: clamp(34px,
+    min(80px,
+        calc((100dvh - 118px - 22px) / 8),
+        calc((100vw - 24px - 22px) / 8)),
+    80px);
+  --board-w: calc(var(--cell) * 8 + 22px);
+  --bar-w: max(var(--board-w), min(100%, 560px));
+}
+
+/* 整页固定一屏：不产生页面滚动条（内部各面板自己控制可见行数） */
+body {
+  background: #1a1a2e; color: #e0e0e0;
+  font-family: "Microsoft YaHei", sans-serif;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 10px 12px;
+  height: 100vh; height: 100dvh;
+  overflow: hidden;
+}
+
+/* ========== 顶部安全区（避开摄像头 / 灵动岛） ========== */
+/* 桌面浏览器没有这个区域，直接不显示；手机上是一条纯装饰的深色带，
+   里面不放任何信息，靠 body 的 padding-top 把整页内容压到它下面 */
+#cam-safe { display: none; }
+
+/* ========== 顶栏 ========== */
+/* 全文字：第几次挑战 / 第几层 / 第几回合 / 金币 / 谁的回合。
+   标签淡色、数字金色放大，扫一眼就能读出当前进度。
+   右侧按钮只留高频操作：结束回合 + 三个信息入口 + 存档
+   （音效与重新挑战收进存档弹窗，不占主界面） */
+#topbar {
+  display: flex; gap: 14px; align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px; background: #16213e;
+  border-radius: 6px; margin-bottom: 8px;
+  font-size: 13px; flex-wrap: nowrap;
+  width: var(--bar-w); max-width: 100%;   /* 与棋盘严格同宽 */
+}
+#topbar .tb-info { display: flex; gap: 16px; align-items: center; flex-wrap: nowrap; }
+#topbar .tb-i { white-space: nowrap; color: #9fb3d1; font-size: 12.5px; }
+#topbar .tb-i b { color: #ffd166; font-size: 14.5px; margin: 0 1px; }
+#topbar .tb-inc {
+  color: #6b7794; font-style: normal; font-size: 10.5px;
+  margin-left: 3px; white-space: nowrap;
+}
+/* 按钮组：桌面与其它项同一行排列（间距沿用 topbar 的 gap），移动端整行折到下面 */
+#topbar .tb-btns { display: flex; gap: 7px; align-items: center; flex: 0 0 auto; }
+#topbar button {
+  padding: 5px 12px; background: #ffd166; border: none;
+  border-radius: 4px; font-weight: bold; cursor: pointer;
+  color: #1a1a2e; font-size: 12.5px; white-space: nowrap;
+}
+#topbar button:hover { background: #ffb703; }
+#topbar button:disabled { background: #555; color: #999; cursor: not-allowed; }
+/* 敌人回合：「结束回合」按钮本身变成状态牌，暗红底 + 明确文案 */
+#topbar button.is-enemy:disabled { background: #4a2230; color: #ff8fa3; opacity: 1; }
+/* 次级按钮：深底浅字，不跟「结束回合」抢注意力 */
+#topbar .tb-dark {
+  background: #263252; color: #c9d1e4; font-weight: normal;
+  padding: 5px 10px; font-size: 12px;
+}
+#topbar .tb-dark:hover { background: #33405f; color: #fff; }
+#topbar .tb-meta {
+  background: #263252; color: #ffd166; font-weight: bold; font-size: 12px;
+  border: 1px solid #3d4f78;
+}
+#topbar .tb-meta:hover { background: #33405f; color: #ffe08a; }
+
+/* ========== 行动栏 ========== */
+/* 界面上唯一常驻的「操作 + 最新动态」条：
+   未选中单位时显示最新一条日志，选中后右侧是四条指令。
+   固定高度 + 单行 + overflow:hidden，绝不会被内容撑开把棋盘顶下去 */
+#action-bar {
+  display: flex; gap: 10px; align-items: center;
+  padding: 0 16px; background: #16213e;
+  border-radius: 6px; margin: 0 0 8px;
+  font-size: 13px; height: 34px; overflow: hidden;
+  flex-wrap: nowrap;
+  width: var(--bar-w); max-width: 100%;   /* 与棋盘严格同宽 */
+  flex: 0 0 auto;
+}
+/* 角色名是个按钮：点它 = 取消选中（点自己脚下格子已经被「待命」占用了） */
+#action-bar .who {
+  color: #ffd166; font-weight: bold; flex: 0 0 auto;
+  background: none; border: none; padding: 0; margin: 0;
+  font-family: inherit; font-size: 13px; cursor: pointer;
+  white-space: nowrap;
+}
+#action-bar .who:hover { color: #fff1c1; }
+#action-bar .hint {
+  color: #8ecae6; flex: 1 1 0%; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* 最新一条日志沿用它自己的类型颜色（.log-player / .log-kill …），
+   这里只保证它同样单行省略 */
+#action-bar .ab-latest { color: #9fb3d1; }
+#action-bar .ab-latest:empty::before {
+  content: '点棋盘上的己方单位开始行动 —— 每回合「移动一次 + 攻击 / 技能 / 待命（再点自己）」';
+  color: #6b7794;
+}
+#action-bar .shape-tag, #action-bar .hint-forest { flex: 0 0 auto; }
+#action-bar .act-group {
+  margin-left: auto; display: flex; gap: 5px; align-items: center;
+  flex: 0 0 auto;
+}
+#action-bar .act-group button {
+  padding: 5px 11px; background: #4cc9f0;
+  border: none; border-radius: 4px; font-weight: bold; cursor: pointer;
+  color: #1a1a2e; font-size: 12.5px; flex: 0 0 auto;
+  margin-left: 0; white-space: nowrap;
+}
+#action-bar .act-group button.skill { background: #c77dff; }
+#action-bar .act-group button:hover { background: #7bdcff; }
+#action-bar .act-group button.skill:hover { background: #e0aaff; }
+#action-bar .act-group button.on { box-shadow: inset 0 0 0 2px #ffd166; }
+#action-bar .act-group button:disabled {
+  background: #333a4d; color: #767e96; cursor: not-allowed;
+}
+
+/* ========== 主布局 ========== */
+/* 主区只剩棋盘：装备栏 / 日志栏 / 卡牌条全部撤出主视图 */
+/* 棋盘紧贴行动栏下方（flex-start），多余的竖向空间全留在底部：
+   行动栏挪到棋盘上方后，如果还居中，栏和棋盘之间会空出一大截，看着像两块东西 */
+#main {
+  display: flex; align-items: flex-start; justify-content: center;
+  flex: 0 1 auto; min-height: 0;
+}
+
+/* 棋盘列 */
+#board-col {
+  display: flex; flex-direction: column; align-items: center;
+}
+
+/* ========== 地图 ========== */
+#board-wrap {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center;
+}
+#board {
+  /* 格子尺寸由 :root 统一给出（见文件顶部 --cell），这里直接继承，
+     不再重复定义 —— 否则顶栏 / 行动栏没法跟着棋盘变宽 */
+  display: grid;
+  grid-template-columns: repeat(8, var(--cell));
+  grid-template-rows: repeat(8, var(--cell));
+  gap: 2px; background: #333; padding: 4px;
+  border-radius: 6px;
+}
+
+/* 空格 */
+.cell {
+  width: var(--cell); height: var(--cell);
+  background: #2a2a3a; border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: calc(var(--cell) * 0.43); cursor: pointer;
+  position: relative; user-select: none;
+  transition: background 0.15s;
+  border: 2px solid transparent;
+}
+
+/* ========== 地形（纯 CSS 纹理 + emoji，不使用任何图片素材） ==========
+   地形只靠「底色 + 纹理 + 图标」区分，不再描边框 ——
+   边框留给敌我阵营，一眼就能看出哪格是自己人、哪格是敌人 */
+.cell.terrain-forest {
+  background-image: repeating-linear-gradient(45deg,
+    rgba(123,255,207,0.14) 0 4px, rgba(0,0,0,0) 4px 9px);
+}
+.cell.terrain-river {
+  background-color: #123a5c;
+  background-image: repeating-linear-gradient(180deg,
+    rgba(123,220,255,0.22) 0 2px, rgba(0,0,0,0) 2px 8px);
+  animation: riverFlow 2.4s linear infinite;
+}
+@keyframes riverFlow {
+  0%   { background-position: 0 0; }
+  100% { background-position: 0 10px; }
+}
+.cell.terrain-mountain {
+  background-color: #34343f;
+  background-image: repeating-linear-gradient(135deg,
+    rgba(205,210,225,0.18) 0 3px, rgba(0,0,0,0) 3px 9px);
+}
+.terrain-icon { font-size: calc(var(--cell) * 0.46); opacity: 0.85; }
+
+/* 地形图例（棋盘下方） */
+/* （地形 / 形状说明已移入日志栏上栏，见文件末尾 #log-tips 一节） */
+
+/* 行动栏：身处森林的提示 */
+#action-bar .hint-forest { color: #6fbf9a; }
+
+/* 阵营：边框 + 内发光 + 血条 三重区分
+   地形不再描边，边框专门用来标敌我 —— 一眼看清哪格是自己人 */
+.cell.ally {
+  background-color: #14342a;
+  border-color: #2fbf88;
+  box-shadow: inset 0 0 10px rgba(6, 214, 160, 0.28), 0 0 4px rgba(6, 214, 160, 0.3);
+  text-shadow: 0 2px 3px rgba(0, 0, 0, 0.85);
+}
+.cell.ally .hp-fill { background: #06d6a0; }
+.cell.enemy {
+  background-color: #3a1220;
+  border-color: #ef476f;
+  box-shadow: inset 0 0 10px rgba(239, 71, 111, 0.32), 0 0 4px rgba(239, 71, 111, 0.3);
+  text-shadow: 0 2px 3px rgba(0, 0, 0, 0.85);
+}
+.cell.enemy .hp-fill { background: #ff4d6d; }
+
+/* 鸟人 / BOSS：金 / 品红描边 + 外发光，始终是场上最亮的两个点 */
+.cell.hero {
+  border-color: #ffd166 !important;
+  box-shadow: inset 0 0 12px rgba(255, 209, 102, 0.35), 0 0 12px rgba(255, 209, 102, 0.8);
+}
+.cell.boss {
+  border-color: #ff006e !important;
+  box-shadow: inset 0 0 14px rgba(255, 0, 110, 0.4), 0 0 14px rgba(255, 0, 110, 0.85);
+}
+
+/* 已行动 */
+.cell.done { opacity: 0.4; }
+
+/* 高亮 */
+.cell.moveable { background-color: rgba(45, 106, 79, 0.66); }
+.cell.moveable:hover { background-color: rgba(64, 145, 108, 0.8); }
+.cell.attackable { background-color: #9d0208; }
+.cell.attackable:hover { background-color: #d00000; }
+.cell.selected { outline: 2px solid #ffd166; outline-offset: -2px; }
+
+/* 血条 */
+.hp-bar {
+  position: absolute; bottom: 2px; left: 4px; right: 4px;
+  height: 4px; background: #000; border-radius: 2px; overflow: hidden;
+  box-shadow: 0 0 3px rgba(0,0,0,0.9);
+}
+.hp-fill { height: 100%; transition: width 0.2s; }
+
+/* 等级角标 */
+.lv-badge {
+  position: absolute; top: 1px; left: 3px;
+  font-size: 9px; color: #ffd166;
+  text-shadow: 0 0 3px #000;
+  font-weight: bold;
+}
+
+/* ========== 日志 / 说明弹窗 ========== */
+/* 主界面上不再有常驻日志栏：
+   · 最新一条显示在行动栏（#action-bar .ab-latest）
+   · 全量清单在「日志」弹窗（.log-modal）
+   · 地形 / 单位 / 操作在「说明」弹窗（.help-modal）
+   共用的一份文字样式挂在 .help-modal / .log-modal 上，统一成 .tu-* / .hp-* 两套 */
+
+/* ---- 说明弹窗 ---- */
+.modal.help-modal {
+  width: 92vw; max-width: 460px;
+  max-height: 86vh; overflow-y: auto;
+  text-align: left;
+}
+.help-modal .hp-sec { margin-bottom: 12px; }
+.help-modal .hp-h {
+  color: #ffd166; font-weight: bold; font-size: 12.5px;
+  border-bottom: 1px solid #0f3460; padding-bottom: 3px; margin-bottom: 5px;
+}
+.help-modal .hp-sub { color: #6b7794; font-weight: normal; font-size: 10.5px; margin-left: 6px; }
+.help-modal .hp-line { color: #8a93a8; font-size: 12px; line-height: 1.6; }
+.help-modal .hp-line b { color: #cfd6e4; }
+.help-modal .hp-heal {
+  margin-top: 5px; color: #06d6a0; font-size: 11.5px;
+  background: rgba(6, 214, 160, 0.08);
+  border: 1px solid rgba(6, 214, 160, 0.28);
+  border-radius: 4px; padding: 2px 7px;
+}
+.help-modal .hp-heal b { color: #7bffcf; }
+.help-modal .hp-link {
+  color: #7bdcff; cursor: pointer; font-size: 11.5px;
+  text-decoration: underline dotted; margin: 4px 0 2px;
+}
+.help-modal .hp-link:hover { color: #ffd166; }
+
+/* 地形图例（terrainLegendHtml） */
+.help-modal .tu-line { color: #8a93a8; font-size: 11.5px; line-height: 1.6; }
+.help-modal .tu-line b { color: #cfd6e4; }
+
+/* ---- 日志弹窗 ---- */
+.modal.log-modal {
+  width: 92vw; max-width: 520px;
+  display: flex; flex-direction: column;
+  max-height: 86vh; overflow: hidden;
+}
+.log-modal .lg-sub { color: #8ea4c6; font-size: 11.5px; margin: -6px 0 8px; }
+.log-modal .lg-body {
+  flex: 1 1 auto; min-height: 140px; overflow-y: auto;
+  background: #0b1730; border: 1px solid #14345c; border-radius: 6px;
+  padding: 8px 10px;
+}
+.log-modal .lg-row {
+  font-size: 12px; line-height: 1.65; color: #aaa;
+  word-break: break-all;
+}
+.log-modal .lg-empty { color: #6b7794; font-size: 12px; }
+
+/* 日志类型配色（行动栏最新一条与日志弹窗共用） */
+.log-player { color: #80ed99; }
+.log-enemy { color: #ff8fa3; }
+.log-system { color: #ffd166; }
+.log-kill { color: #ff006e; font-weight: bold; }
+.log-heal { color: #4cc9f0; }
+.log-taunt-hero { color: #ffd166; font-style: italic; font-weight: bold; }
+.log-taunt-boss { color: #ff006e; font-style: italic; font-weight: bold; }
+.log-levelup { color: #ffd60a; font-weight: bold; }
+.log-exp { color: #b8b8d1; }
+.log-crit { color: #ffd166; font-weight: bold; }
+.log-skill { color: #c77dff; }
+.log-miss { color: #9aa6c0; }
+
+/* ========== 弹幕日志（从右往左飘） ========== */
+/* 全屏覆盖但 pointer-events:none —— 演出归演出，点击照样穿过去。
+   z-index 低于回合弹字(90)与弹窗(100)，高于棋盘特效(20~34)。 */
+#danmaku-layer, #danmaku-layer-top {
+  position: fixed; inset: 0;
+  overflow: hidden; pointer-events: none;
+}
+#danmaku-layer { z-index: 55; }        /* 普通流水：弹窗下面 */
+#danmaku-layer-top { z-index: 210; }   /* 结论大字：弹窗上面（强化时商店开着） */
+.dm {
+  position: absolute; left: 0; top: 0;
+  display: inline-block;
+  white-space: nowrap;
+  font-size: 13px; line-height: 1;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: rgba(6, 10, 24, 0.56);
+  border: 1px solid rgba(120, 170, 255, 0.22);
+  color: #dbe6ff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.92);
+  transform: translateX(100vw);
+  animation-name: dm-fly;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+  will-change: transform;
+  backface-visibility: hidden;
+}
+@keyframes dm-fly {
+  from { transform: translate3d(100vw, 0, 0); }
+  to   { transform: translate3d(calc(-100% - 24px), 0, 0); }
+}
+
+/* 高频小流水（经验 / 回血 / 地形）：缩一号、压透明度，不抢主战斗线 */
+.dm.minor {
+  font-size: 11.5px; padding: 3px 9px;
+  background: rgba(6, 10, 24, 0.46);
+  opacity: 0.85;
+}
+/* 结论级大字（强化成败 / 奖励发放）：慢一点、亮一点 */
+.dm.big {
+  font-size: 16px; font-weight: bold; letter-spacing: 0.5px;
+  padding: 6px 16px;
+  background: rgba(10, 14, 32, 0.9);
+  border-width: 1.5px;
+}
+
+/* 按日志类型的配色（.dm.t-<type>） */
+.dm.t-player      { color: #a9e4ff; }
+.dm.t-enemy       { color: #ffb3c1; }
+.dm.t-kill        { color: #ffb37a; border-color: rgba(255, 150, 90, 0.45); }
+.dm.t-heal        { color: #9df3b8; }
+.dm.t-exp         { color: #ffe9a8; }
+.dm.t-levelup     { color: #ffd166; border-color: rgba(255, 209, 102, 0.55); }
+.dm.t-system      { color: #c3cde0; }
+.dm.t-terrain     { color: #9db4d4; }
+.dm.t-taunt-hero  { color: #a9c8ff; font-style: italic; }
+.dm.t-taunt-boss  { color: #ff8fb0; font-style: italic; }
+/* 战棋改版新增的三类（暴击 / 技能 / 闪避） */
+.dm.t-crit  { color: #ffd166; border-color: rgba(255, 209, 102, 0.6); text-shadow: 0 0 12px rgba(255, 180, 60, 0.7); }
+.dm.t-skill { color: #c77dff; border-color: rgba(199, 125, 255, 0.6); }
+.dm.t-miss  { color: #9aa6c0; }
+
+/* 强化 / 存档奖励的结论弹幕 */
+.dm.t-big-ok {
+  color: #7dffb0; border-color: rgba(125, 255, 176, 0.65);
+  box-shadow: 0 0 18px rgba(125, 255, 176, 0.35);
+}
+.dm.t-big-bad {
+  color: #ff8fa3; border-color: rgba(255, 143, 163, 0.65);
+  box-shadow: 0 0 18px rgba(255, 100, 130, 0.32);
+}
+
+/* 移动端：弹幕更小、贴边更少，避免糊满棋盘 */
+@media (max-width: 860px) {
+  .dm { font-size: 11.5px; padding: 3px 9px; }
+  .dm.big { font-size: 13.5px; padding: 5px 12px; }
+  .dm.minor { font-size: 10.5px; }
+}
+
+/* ========== 通关三选一（商店删除后，金币花在这里） ========== */
+/* 上面是三张卡，下面两个金币按钮：点一下当场结算，没有第二个弹窗 */
+.modal.clear-modal {
+  display: flex; flex-direction: column;
+  max-height: 88vh; overflow: hidden;
+}
+.clr-sub {
+  flex: 0 0 auto;
+  color: #9fb3d1; font-size: 12px;
+  margin: -4px 0 8px;
+}
+.clr-sub b { color: #ffd166; }
+.modal.clear-modal #clear-cards { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.clr-buys {
+  flex: 0 0 auto;
+  display: flex; gap: 8px; margin: 10px 0 2px;
+}
+.clr-buy {
+  flex: 1 1 0; min-width: 0;
+  padding: 9px 8px 7px;
+  background: #0f3460; color: #8ecae6;
+  border: 1px solid #1c4b7e; border-radius: 6px;
+  font-family: inherit; font-size: 12.5px; font-weight: bold;
+  cursor: pointer; line-height: 1.3;
+}
+.clr-buy i {
+  display: block; margin-top: 3px;
+  font-style: normal; font-size: 11px; font-weight: normal; color: #ffd166;
+}
+.clr-buy:hover { background: #14406f; border-color: #4cc9f0; }
+.clr-buy:disabled { background: #232a3d; border-color: #2c3550; color: #6b7794; cursor: not-allowed; }
+.clr-buy:disabled i { color: #6b7794; }
+
+
+/* ========== 卡牌清单弹窗 ========== */
+/* 主界面上已经没有卡牌条了：顶栏「卡牌 N」直接打开这份清单 */
+.modal.card-modal {
+  min-width: 480px; max-width: 560px;
+  display: flex; flex-direction: column;
+  max-height: 86vh; overflow: hidden;
+}
+.card-modal .cl-sub { color: #8ea4c6; font-size: 12px; margin: -6px 0 10px; }
+.card-modal .cl-body { flex: 1 1 auto; overflow-y: auto; min-height: 0; padding-right: 4px; }
+.cl-sec { margin-bottom: 12px; }
+.cl-sec-h {
+  color: #4cc9f0; font-size: 12px; font-weight: bold;
+  padding-bottom: 4px; margin-bottom: 4px;
+  border-bottom: 1px solid rgba(76, 201, 240, 0.2);
+}
+.cl-row {
+  display: grid; grid-template-columns: 132px 1fr; gap: 10px;
+  padding: 5px 2px; align-items: baseline;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+}
+.cl-name {
+  font-weight: bold; font-size: 12.5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cl-dot {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  margin-right: 6px; vertical-align: middle; font-style: normal;
+}
+.cl-desc { color: #c7d2e4; font-size: 12px; line-height: 1.5; }
+.cl-stk  { color: #ffd166; font-size: 11px; margin-left: 6px; white-space: nowrap; }
+.cl-when { display: block; color: #ffb703; font-size: 11px; margin-top: 2px; }
+.cl-empty { color: #8ea4c6; font-size: 12.5px; line-height: 1.75; padding: 12px 4px; }
+.cl-legend { color: #6b7794; font-size: 11px; margin-top: 8px; }
+
+/* ========== 飘字 ========== */
+.float-text {
+  position: absolute; pointer-events: none;
+  font-weight: bold; font-size: 15px;
+  text-shadow: 0 0 4px #000, 0 0 4px #000;
+  animation: floatUp 1.2s ease-out forwards;
+  z-index: 20; white-space: nowrap;
+}
+@keyframes floatUp {
+  0%   { transform: translate(-50%, 0) scale(0.8); opacity: 0; }
+  20%  { transform: translate(-50%, -10px) scale(1.2); opacity: 1; }
+  100% { transform: translate(-50%, -50px) scale(1); opacity: 0; }
+}
+.float-dmg { color: #ff5252; }
+.float-crit { color: #ff9f1c; font-size: 18px; }
+.float-miss { color: #adb5bd; }
+.float-move { color: #06d6a0; font-size: 13px; }
+.float-kill { color: #ff006e; font-size: 16px; }
+.float-heal { color: #4cc9f0; font-size: 16px; }
+.float-exp { color: #b5179e; font-size: 13px; }
+.float-levelup { color: #ffd60a; font-size: 18px; }
+
+/* ========== 弹窗 ========== */
+.modal-bg {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+}
+.modal {
+  background: #16213e; border-radius: 8px;
+  padding: 20px; min-width: 340px; max-width: 520px;
+  border: 1px solid #4cc9f0;
+  max-height: 90vh; overflow-y: auto;
+}
+.modal h2 { color: #ffd166; font-size: 18px; margin-bottom: 12px; }
+.modal .card-option {
+  background: #0f3460; border-radius: 6px;
+  padding: 10px; margin-bottom: 8px;
+  cursor: pointer; border: 1px solid transparent;
+  transition: all 0.15s;
+}
+.modal .card-option:hover { border-color: #ffd166; }
+.modal .card-option .card-name { font-weight: bold; }
+.modal .card-option .card-desc { color: #ccc; font-size: 12px; margin-top: 4px; }
+.modal .btn {
+  display: block; width: 100%; padding: 10px;
+  background: #ffd166; border: none; border-radius: 4px;
+  font-weight: bold; cursor: pointer; color: #1a1a2e;
+  margin-top: 8px; font-size: 13px;
+}
+.modal .btn:hover { background: #ffb703; }
+.modal .btn:disabled { background: #333; color: #666; cursor: not-allowed; }
+
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ============================================================
+   攻击特效（纯 CSS，无图片素材）
+   ============================================================ */
+
+/* 攻击轨迹光束 */
+.fx-beam {
+  position: absolute; height: 4px; border-radius: 2px;
+  transform-origin: 0 50%;
+  background: linear-gradient(90deg, rgba(255,255,255,0), #eaf9ff 22%, #7bdcff 62%, rgba(123,220,255,0));
+  box-shadow: 0 0 10px #7bdcff, 0 0 20px rgba(123,220,255,0.65);
+  pointer-events: none; z-index: 26;
+  animation: fxBeam 0.5s cubic-bezier(.2,.85,.2,1) forwards;
+}
+.fx-beam.enemy {
+  background: linear-gradient(90deg, rgba(255,255,255,0), #ffd9d9 22%, #ff5252 62%, rgba(255,82,82,0));
+  box-shadow: 0 0 10px #ff5252, 0 0 20px rgba(255,82,82,0.6);
+}
+.fx-beam.crit { height: 7px; box-shadow: 0 0 14px #ff9f1c, 0 0 28px rgba(255,159,28,0.75); }
+.fx-beam.crit.enemy { box-shadow: 0 0 14px #ff5252, 0 0 28px rgba(255,82,82,0.75); }
+@keyframes fxBeam {
+  0%   { opacity: 0; transform: rotate(var(--ang)) scaleX(0.04); }
+  32%  { opacity: 1; transform: rotate(var(--ang)) scaleX(1); }
+  100% { opacity: 0; transform: rotate(var(--ang)) scaleX(1) translateX(8px); }
+}
+
+/* 命中闪光 */
+.fx-flash {
+  position: absolute; transform: translate(-50%, -50%);
+  border-radius: 8px; pointer-events: none; z-index: 24;
+  background: radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.4) 45%, rgba(255,255,255,0) 72%);
+  animation: fxFlash 0.55s ease-out forwards;
+}
+.fx-flash.enemy { background: radial-gradient(circle, rgba(255,110,110,0.95) 0%, rgba(255,82,82,0.4) 45%, rgba(255,82,82,0) 72%); }
+.fx-flash.crit { background: radial-gradient(circle, #fff 0%, #ffd166 40%, rgba(255,159,28,0) 75%); }
+@keyframes fxFlash {
+  0%   { opacity: 0; transform: translate(-50%,-50%) scale(0.55); }
+  22%  { opacity: 1; transform: translate(-50%,-50%) scale(1.06); }
+  100% { opacity: 0; transform: translate(-50%,-50%) scale(1.28); }
+}
+
+/* 冲击环 */
+.fx-ring {
+  position: absolute; width: 20px; height: 20px; border-radius: 50%;
+  border: 3px solid #7bdcff; transform: translate(-50%,-50%);
+  box-shadow: 0 0 12px #7bdcff, inset 0 0 12px #7bdcff;
+  pointer-events: none; z-index: 25;
+  animation: fxRing 0.7s ease-out forwards;
+}
+.fx-ring.enemy { border-color: #ff5252; box-shadow: 0 0 12px #ff5252, inset 0 0 12px #ff5252; }
+.fx-ring.crit { border-color: #ff9f1c; box-shadow: 0 0 20px #ff9f1c, inset 0 0 20px #ff9f1c; border-width: 4px; }
+.fx-ring.ring2 { animation-duration: 0.88s; border-width: 2px; }
+@keyframes fxRing {
+  0%   { opacity: 0; transform: translate(-50%,-50%) scale(0.2); }
+  28%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%,-50%) scale(1.95); }
+}
+
+/* 近战交击火花（两道光刃交叉） */
+.fx-clash {
+  position: absolute; width: 46px; height: 46px;
+  transform: translate(-50%,-50%); pointer-events: none; z-index: 27;
+  background:
+    linear-gradient(45deg, transparent 46%, #fff 49%, #fff 51%, transparent 54%),
+    linear-gradient(-45deg, transparent 46%, #cdefff 49%, #cdefff 51%, transparent 54%);
+  filter: drop-shadow(0 0 7px #7bdcff);
+  animation: fxClash 0.55s ease-out forwards;
+}
+.fx-clash.crit {
+  width: 62px; height: 62px;
+  filter: drop-shadow(0 0 10px #ff9f1c);
+  background:
+    linear-gradient(45deg, transparent 46%, #fff 49%, #fff 51%, transparent 54%),
+    linear-gradient(-45deg, transparent 46%, #ffd166 49%, #ffd166 51%, transparent 54%);
+}
+@keyframes fxClash {
+  0%   { opacity: 0; transform: translate(-50%,-50%) scale(0.3) rotate(0deg); }
+  32%  { opacity: 1; transform: translate(-50%,-50%) scale(1.12) rotate(16deg); }
+  100% { opacity: 0; transform: translate(-50%,-50%) scale(1.34) rotate(32deg); }
+}
+
+/* 阵亡爆裂 */
+.fx-burst {
+  position: absolute; width: 64px; height: 64px; border-radius: 50%;
+  transform: translate(-50%,-50%); pointer-events: none; z-index: 28;
+  background: radial-gradient(circle, #fff 0%, #ff006e 34%, rgba(255,0,110,0) 72%);
+  animation: fxBurst 0.95s ease-out forwards;
+}
+.fx-burst.shard {
+  background: radial-gradient(circle, rgba(255,209,102,0.9) 0%, rgba(255,209,102,0) 68%);
+  animation-delay: 0.06s;
+}
+@keyframes fxBurst {
+  0%   { opacity: 0; transform: translate(-50%,-50%) scale(0.22); }
+  18%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%,-50%) scale(2.15); }
+}
+
+/* 治疗光环 */
+.fx-heal {
+  position: absolute; width: 54px; height: 54px; border-radius: 50%;
+  transform: translate(-50%,-50%); pointer-events: none; z-index: 24;
+  border: 2px solid #06d6a0;
+  box-shadow: 0 0 14px #06d6a0, inset 0 0 14px rgba(6,214,160,0.7);
+  animation: fxHeal 0.9s ease-out forwards;
+}
+@keyframes fxHeal {
+  0%   { opacity: 0; transform: translate(-50%,-50%) scale(0.5); }
+  28%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%,-135%) scale(1.1); }
+}
+
+/* 闪避 / 免疫 弧线 */
+.fx-swoosh {
+  position: absolute; width: 48px; height: 48px; border-radius: 50%;
+  transform: translate(-50%,-50%); pointer-events: none; z-index: 24;
+  border-top: 2px dashed #cfd6e4;
+  border-right: 2px dashed #cfd6e4;
+  animation: fxSwoosh 0.7s ease-out forwards;
+}
+@keyframes fxSwoosh {
+  0%   { opacity: 0; transform: translate(-50%,-50%) scale(0.6) rotate(-25deg); }
+  30%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%,-50%) scale(1.25) rotate(25deg); }
+}
+
+/* ===== 形状特效：射手贯穿整行 / 法师贯穿整列 / 鸟人打一圈 =====
+   统一 1.05s：前 55% 保持完整形状让人看清，后 45% 慢慢淡出
+   （用户要求「攻击效果更明显、消失更慢」） */
+
+/* 一箭穿一横排：从射手身上向左右各射一道，越远越淡（所以拆成左右两半） */
+.fx-row-shot {
+  position: absolute; pointer-events: none; z-index: 33;
+  border-radius: 999px;
+  box-shadow: 0 0 16px rgba(255, 209, 102, 0.9), 0 0 38px rgba(255, 159, 28, 0.55);
+  animation: fxRowShot 1.05s cubic-bezier(.15, .8, .2, 1) forwards;
+}
+/* 左半：射手在右端（origin 100%），向右一端最亮。
+   两层背景：宽的柔光 + 中间一条细亮核，看起来像一支箭穿过去 */
+.fx-row-shot.left {
+  transform-origin: 100% 50%;
+  background-image:
+    linear-gradient(270deg, #ffffff 0%, #ffffff 34%, rgba(255, 243, 207, 0) 100%),
+    linear-gradient(270deg,
+      rgba(255, 255, 255, 0.92) 0%, rgba(255, 243, 207, 0.9) 16%, rgba(255, 232, 170, 0.84) 44%,
+      rgba(255, 209, 102, 0.64) 72%, rgba(255, 183, 3, 0.4) 92%, rgba(255, 159, 28, 0) 100%);
+  background-size: 100% 26%, 100% 100%;
+  background-position: 0 50%, 0 0;
+  background-repeat: no-repeat;
+}
+/* 右半：射手在左端（origin 0），向左一端最亮 */
+.fx-row-shot.right {
+  transform-origin: 0 50%;
+  background-image:
+    linear-gradient(90deg, #ffffff 0%, #ffffff 34%, rgba(255, 243, 207, 0) 100%),
+    linear-gradient(90deg,
+      rgba(255, 255, 255, 0.92) 0%, rgba(255, 243, 207, 0.9) 16%, rgba(255, 232, 170, 0.84) 44%,
+      rgba(255, 209, 102, 0.64) 72%, rgba(255, 183, 3, 0.4) 92%, rgba(255, 159, 28, 0) 100%);
+  background-size: 100% 26%, 100% 100%;
+  background-position: 0 50%, 0 0;
+  background-repeat: no-repeat;
+}
+@keyframes fxRowShot {
+  0%   { opacity: 0; transform: scaleX(0.02); }
+  7%   { opacity: 1; }
+  24%  { transform: scaleX(1); }
+  64%  { opacity: 1; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+
+/* 一术打一纵列：从法师身上向上下各贯一道光柱 */
+.fx-col-shot {
+  position: absolute; pointer-events: none; z-index: 33;
+  border-radius: 999px;
+  box-shadow: 0 0 16px rgba(123, 220, 255, 0.9), 0 0 38px rgba(164, 139, 255, 0.55);
+  animation: fxColShot 1.05s cubic-bezier(.15, .8, .2, 1) forwards;
+}
+.fx-col-shot.up {
+  transform-origin: 50% 100%;
+  background-image:
+    linear-gradient(0deg, #ffffff 0%, #ffffff 36%, rgba(221, 246, 255, 0) 100%),
+    linear-gradient(0deg,
+      rgba(255, 255, 255, 0.92) 0%, rgba(221, 246, 255, 0.9) 18%, rgba(170, 232, 255, 0.84) 46%,
+      rgba(164, 180, 255, 0.62) 74%, rgba(164, 139, 255, 0.38) 93%, rgba(164, 139, 255, 0) 100%);
+  background-size: 26% 100%, 100% 100%;
+  background-position: 50% 0, 0 0;
+  background-repeat: no-repeat;
+}
+.fx-col-shot.down {
+  transform-origin: 50% 0;
+  background-image:
+    linear-gradient(180deg, #ffffff 0%, #ffffff 36%, rgba(221, 246, 255, 0) 100%),
+    linear-gradient(180deg,
+      rgba(255, 255, 255, 0.92) 0%, rgba(221, 246, 255, 0.9) 18%, rgba(170, 232, 255, 0.84) 46%,
+      rgba(164, 180, 255, 0.62) 74%, rgba(164, 139, 255, 0.38) 93%, rgba(164, 139, 255, 0) 100%);
+  background-size: 26% 100%, 100% 100%;
+  background-position: 50% 0, 0 0;
+  background-repeat: no-repeat;
+}
+@keyframes fxColShot {
+  0%   { opacity: 0; transform: scaleY(0.02); }
+  7%   { opacity: 1; }
+  25%  { transform: scaleY(1); }
+  64%  { opacity: 1; transform: scaleY(1); }
+  100% { opacity: 0; transform: scaleY(1); }
+}
+
+/* 鸟人打一圈：以自身为圆心的冲击环（两层错开） */
+.fx-ring8 {
+  position: absolute; transform: translate(-50%, -50%);
+  border-radius: 50%; pointer-events: none; z-index: 32;
+  border: 5px solid #ffd166;
+  /* 边缘一圈内侧辉光，让「打一圈」看得出是覆盖了身边 8 格 */
+  background: radial-gradient(circle,
+    rgba(255, 209, 102, 0) 52%, rgba(255, 209, 102, 0.16) 78%,
+    rgba(255, 232, 170, 0.42) 94%, rgba(255, 209, 102, 0) 100%);
+  box-shadow: 0 0 34px rgba(255, 209, 102, 1), 0 0 60px rgba(255, 159, 28, 0.6),
+              inset 0 0 38px rgba(255, 159, 28, 0.7);
+  animation: fxRing8 1.05s cubic-bezier(.15, .8, .2, 1) forwards;
+}
+.fx-ring8.wave2 {
+  border-width: 3px; border-color: #ffb703;
+  background: none;
+  box-shadow: 0 0 22px rgba(255, 183, 3, 0.9), inset 0 0 22px rgba(255, 183, 3, 0.5);
+}
+@keyframes fxRing8 {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.18); }
+  12%  { opacity: 1; }
+  34%  { transform: translate(-50%, -50%) scale(0.84); }
+  62%  { opacity: 0.92; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.22); }
+}
+
+/* 出手闪光（射手 / 法师 / 鸟人 出手点） */
+.fx-muzzle {
+  position: absolute; width: 40px; height: 40px; border-radius: 50%;
+  transform: translate(-50%, -50%); pointer-events: none; z-index: 34;
+  background: radial-gradient(circle, #fff 0%, rgba(255, 209, 102, 0.85) 32%, rgba(255, 159, 28, 0) 72%);
+  animation: fxMuzzle 0.75s ease-out forwards;
+}
+.fx-muzzle.big { width: 68px; height: 68px; }
+@keyframes fxMuzzle {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.35); }
+  18%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.55); }
+}
+
+/* 暴击震屏 */
+.fx-shake { animation: fxShake 0.3s ease-out; }
+@keyframes fxShake {
+  0%,100% { transform: translate(0,0); }
+  20% { transform: translate(-2px, 1px); }
+  40% { transform: translate(2px, -1px); }
+  60% { transform: translate(-1px, -1px); }
+  80% { transform: translate(1px, 1px); }
+}
+
+/* 可移动 / 可攻击 呼吸高亮 */
+.cell.moveable { animation: movePulse 1.5s ease-in-out infinite; }
+@keyframes movePulse {
+  0%, 100% { box-shadow: inset 0 0 0 rgba(6,214,160,0); }
+  50%      { box-shadow: inset 0 0 12px rgba(6,214,160,0.85); }
+}
+.cell.attackable { animation: atkPulse 0.95s ease-in-out infinite; }
+@keyframes atkPulse {
+  0%, 100% { box-shadow: inset 0 0 0 rgba(255,82,82,0); }
+  50%      { box-shadow: inset 0 0 14px rgba(255,82,82,0.95); }
+}
+.cell.selected { animation: selPulse 1.1s ease-in-out infinite; }
+@keyframes selPulse {
+  0%, 100% { box-shadow: 0 0 4px #ffd166; }
+  50%      { box-shadow: 0 0 16px #ffd166, inset 0 0 10px rgba(255,209,102,0.55); }
+}
+
+/* 飘字增强（层级高于特效，保证伤害数字始终可读） */
+.float-text { z-index: 32; }
+.float-dmg { color: #ff5252; }
+.float-crit {
+  color: #ff9f1c; font-size: 21px; letter-spacing: 0.5px;
+  text-shadow: 0 0 6px #000, 0 0 12px #ff9f1c, 0 0 20px #ff9f1c;
+  animation: floatUp 1.25s ease-out forwards, critShake 0.3s ease-out;
+}
+@keyframes critShake {
+  0%,100% { margin-left: 0; }
+  25% { margin-left: -3px; }
+  75% { margin-left: 3px; }
+}
+.float-kill { color: #ff006e; font-size: 17px; text-shadow: 0 0 6px #000, 0 0 12px #ff006e; }
+.float-heal { color: #06d6a0; font-size: 16px; text-shadow: 0 0 6px #000, 0 0 10px #06d6a0; }
+
+/* ============================================================
+   待发卡牌（只在抽卡弹窗里用到「待发」标记）
+   ============================================================ */
+.card-armed { color: #ffd166; font-size: 11px; }
+.card-hero-only { color: #ffb703; font-size: 11px; }
+.modal .card-option.is-armed { border-color: rgba(255,209,102,0.55); }
+
+/* ============================================================
+   存档面板（顶栏「存档」按钮）
+   ============================================================ */
+.modal.meta-modal {
+  display: flex; flex-direction: column;
+  width: 92vw; max-width: 460px;
+  max-height: 88vh; overflow: hidden;
+  text-align: left;
+}
+.modal.meta-modal > h2 { text-align: center; margin-bottom: 4px; }
+.meta-sub {
+  text-align: center; color: #9fb3d1; font-size: 12px;
+  padding-bottom: 8px; margin-bottom: 4px;
+  border-bottom: 1px solid #0f3460;
+}
+.meta-sub b { color: #ffd166; }
+
+.meta-sec {
+  color: #6b7794; font-size: 11px; letter-spacing: .5px;
+  margin: 8px 0 4px;
+}
+.meta-vault {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  background: #0f3460; border: 1px solid #1c4b7e;
+  border-radius: 6px; padding: 7px 9px;
+  font-size: 12px; color: #c9d1e4;
+}
+.meta-vault b { color: #ffd166; }
+.meta-list { display: flex; flex-direction: column; gap: 4px; }
+.meta-row {
+  display: grid; grid-template-columns: 18px 168px 1fr;
+  align-items: center; gap: 6px;
+  background: #101d38; border: 1px solid #1a2b4d;
+  border-radius: 5px; padding: 5px 8px;
+  font-size: 11.5px; color: #7d879c;
+}
+.meta-row.on { border-color: #1c4b7e; color: #c9d1e4; }
+.meta-ico { font-size: 13px; }
+.meta-name { color: #8ecae6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meta-row.on .meta-name { color: #4cc9f0; font-weight: bold; }
+.meta-desc { color: #9fb3d1; }
+.meta-row.on .meta-desc { color: #9df3b8; }
+.meta-tip { color: #6b7794; font-size: 10.5px; line-height: 1.5; margin-top: 9px; }
+.meta-foot {
+  display: flex; gap: 8px; justify-content: space-between;
+  margin-top: 10px; padding-top: 9px; border-top: 1px solid #0f3460;
+}
+.meta-foot .btn { display: inline-block; width: auto; margin-top: 0; padding: 7px 14px; font-size: 12.5px; }
+.meta-foot .btn.danger { background: #40202c; color: #ffb3c1; }
+.meta-foot .btn.danger:hover { background: #55283a; }
+
+/* ============================================================
+   通关结算弹窗（99 层）
+   ============================================================ */
+.modal.clear-modal { text-align: left; }
+.modal.clear-modal > h2 { text-align: center; color: #ffd166; }
+.gc-sub { text-align: center; color: #9fb3d1; font-size: 12px; margin-bottom: 10px; }
+.gc-sec { color: #6b7794; font-size: 11px; letter-spacing: .5px; margin: 8px 0 4px; }
+.gc-list {
+  background: #0f3460; border: 1px solid #1c4b7e; border-radius: 6px;
+  padding: 7px 10px; display: flex; flex-direction: column; gap: 5px;
+  font-size: 12px; color: #c9d1e4;
+}
+.gc-row b { color: #ffd166; }
+.gc-tip { color: #6b7794; font-size: 10.5px; line-height: 1.55; margin-top: 10px; }
+.clear-modal .btn { margin-top: 12px; }
+
+.fail-vault {
+  color: #7f8ba3; font-size: 11px; line-height: 1.5;
+  background: #101d38; border: 1px solid #1a2b4d; border-radius: 5px;
+  padding: 6px 9px; margin-bottom: 10px;
+}
+
+/* ============================================================
+   单位详情里的警告行
+   ============================================================ */
+
+/* ============================================================
+   日志：地形 / 奇遇
+   ============================================================ */
+.log-terrain { color: #6fbf9a; }
+.log-encounter { color: #c77dff; }
+
+/* ============================================================
+   奇遇弹窗
+   ============================================================ */
+.enc-modal { max-width: 480px; text-align: center; }
+.enc-modal h2 { text-align: center; }
+.enc-head { color: #8a93a8; font-size: 12px; margin-bottom: 10px; }
+.enc-icon {
+  font-size: 46px; line-height: 1.15; margin: 4px 0;
+  animation: encFloat 2.6s ease-in-out infinite;
+}
+@keyframes encFloat {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+.enc-title { color: #c77dff; font-weight: bold; font-size: 16px; margin-bottom: 8px; }
+.enc-text {
+  color: #ccc; font-size: 13px; line-height: 1.7; text-align: left;
+  background: #0f3460; border-radius: 6px; padding: 10px 12px;
+  border: 1px solid #1c4b7e; margin-bottom: 12px; white-space: pre-line;
+}
+.enc-options { display: flex; flex-direction: column; gap: 8px; }
+.modal .btn.enc-opt { margin-top: 0; }
+.enc-opt:nth-child(2) { background: #4cc9f0; }
+.enc-tip { color: #6c7691; font-size: 11px; margin-top: 10px; }
+
+.enc-result {
+  color: #e0e0e0; font-size: 13px; line-height: 1.8; text-align: left;
+  background: linear-gradient(180deg, #2a1f45, #0f3460);
+  border: 1px solid #c77dff; border-radius: 6px; padding: 12px;
+  margin-bottom: 12px; white-space: pre-line;
+  animation: encIn .45s ease-out, encGlow 1.2s ease-out;
+}
+@keyframes encIn {
+  0%   { opacity: 0; transform: translateY(8px) scale(0.98); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes encGlow {
+  0%   { box-shadow: 0 0 0 rgba(199,125,255,0); }
+  35%  { box-shadow: 0 0 22px rgba(199,125,255,0.85); }
+  100% { box-shadow: 0 0 0 rgba(199,125,255,0); }
+}
+
+/* ============================================================
+   战棋射程与技能落点（2026-10-24 · 手动单体攻击）
+   ============================================================ */
+
+/* 普攻能覆盖到的格子：一圈淡金虚线 —— 说明「我这一下够得到多远」 */
+.cell.atk-range {
+  box-shadow: inset 0 0 0 1px rgba(255, 209, 102, 0.38),
+              inset 0 0 10px rgba(255, 209, 102, 0.10);
+}
+.cell.atk-range::after {
+  content: ''; position: absolute; inset: 4px;
+  border: 1px dashed rgba(255, 209, 102, 0.28); border-radius: 2px;
+  pointer-events: none;
+}
+/* 范围里站着敌人 → 红色实底强提醒（点一下就开打） */
+.cell.atk-range.attackable {
+  background-color: #9d0208;
+  box-shadow: inset 0 0 0 2px #ffd166, inset 0 0 14px rgba(255, 70, 70, 0.6);
+}
+.cell.atk-range.attackable::after { border-color: rgba(255, 209, 102, 0.85); }
+
+/* 技能模式下的可选落点：紫色脉冲 */
+.cell.skillable {
+  background-color: #5a189a;
+  box-shadow: inset 0 0 0 2px #c77dff, 0 0 12px rgba(199, 125, 255, 0.55);
+  animation: skillPulse 1.05s ease-in-out infinite;
+}
+.cell.skillable::after {
+  content: ''; position: absolute; inset: 3px;
+  border: 1px dashed rgba(255, 255, 255, 0.5); border-radius: 3px;
+  pointer-events: none;
+}
+@keyframes skillPulse {
+  0%, 100% { box-shadow: inset 0 0 0 2px #c77dff, 0 0 8px rgba(199, 125, 255, 0.35); }
+  50%      { box-shadow: inset 0 0 0 2px #e0aaff, 0 0 20px rgba(199, 125, 255, 0.85); }
+}
+
+/* 走位预演：悬停某个可达格 → 直接画出「站到这里的攻击覆盖」 */
+.cell.pv-cell::after {
+  content: ''; position: absolute; inset: 3px;
+  border: 1px dashed #7bdcff; border-radius: 3px;
+  background: rgba(123, 220, 255, 0.10);
+  pointer-events: none;
+}
+.cell.pv-hit {
+  background-color: #b5179e !important;
+  box-shadow: inset 0 0 14px #ff70e0, 0 0 8px rgba(255, 112, 224, 0.6);
+}
+.cell.pv-hit::after {
+  content: ''; position: absolute; inset: 2px;
+  border: 2px solid #ff70e0; border-radius: 3px; pointer-events: none;
+}
+.cell.pv-self { outline: 3px solid #7bdcff !important; outline-offset: -3px; }
+
+/* 悬停敌人：它的威胁范围 */
+.cell.th-threat {
+  box-shadow: inset 0 0 0 1px rgba(239, 71, 111, 0.55),
+              inset 0 0 12px rgba(239, 71, 111, 0.22);
+}
+
+/* 行动栏里的形状标签 */
+#action-bar .shape-tag {
+  background: #232634; border: 1px solid #4cc9f0; color: #7bdcff;
+  border-radius: 10px; padding: 1px 8px; font-size: 12px; white-space: nowrap;
+}
+
+/* 攻击形状图例（已移入日志栏上栏 #log-tips，样式见文件前部） */
+
+/* 单位详情里的形状行 */
+
+/* ============================================================
+   回合弹字 + 头顶对白（ui/fx.js）
+   弹字放慢到 2.4s：先砸下来、停住、再慢慢飘走，保证能看清
+   ============================================================ */
+.turn-banner {
+  position: fixed; left: 50%; top: 16%;   /* 兜底，实际由 placeBanner() 按棋盘上沿定位 */
+  transform: translate(-50%, -50%);
+  pointer-events: none; z-index: 90;
+  text-align: center; white-space: nowrap;
+  padding: 7px 46px 9px;
+  background: linear-gradient(90deg,
+    rgba(6, 10, 20, 0) 0%, rgba(6, 10, 20, 0.88) 17%,
+    rgba(6, 10, 20, 0.88) 83%, rgba(6, 10, 20, 0) 100%);
+  text-shadow: 0 0 18px rgba(0, 0, 0, 0.95), 0 2px 8px #000;
+  animation: turnBannerIn 2.4s cubic-bezier(.2, .8, .2, 1) forwards;
+}
+.turn-banner::after {
+  content: ''; position: absolute; left: 17%; right: 17%; bottom: 3px;
+  height: 1px; background: linear-gradient(90deg, transparent, currentColor, transparent);
+  opacity: .55;
+}
+.turn-banner b {
+  display: block; color: #ffd166;
+  font-size: clamp(22px, 2.9vw, 32px); line-height: 1.12;
+  letter-spacing: 5px;
+}
+.turn-banner i {
+  display: block; margin-top: 4px; font-style: normal;
+  color: #cfd6e4; font-size: clamp(11px, 1.1vw, 13px);
+  letter-spacing: 2.5px;
+}
+.turn-banner.tb-enemy b { color: #ff5c7a; }
+.turn-banner.tb-neutral b { color: #7bdcff; }
+.turn-banner { color: #ffd166; }
+.turn-banner.tb-enemy { color: #ff5c7a; }
+.turn-banner.tb-neutral { color: #7bdcff; }
+@keyframes turnBannerIn {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.72); filter: blur(8px); }
+  16%  { opacity: 1; transform: translate(-50%, -50%) scale(1.06); filter: blur(0); }
+  30%  { transform: translate(-50%, -50%) scale(1); }
+  70%  { opacity: 1; transform: translate(-50%, -56%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -70%) scale(1.02); }
+}
+
+/* 头顶对白气泡已删除（2026-10-24）：垃圾话只落日志，不再盖住棋盘 */
+
+/* ============================================================
+   新手引导（遮罩挖洞 + 气泡）
+   遮罩用 #tut-spot 的 box-shadow 画出来，pointer-events:none →
+   完全不挡点击，玩家必须真的操作才能推进
+   ============================================================ */
+#tut-layer { position: fixed; inset: 0; z-index: 300; pointer-events: none; }
+
+#tut-spot {
+  position: fixed; display: none; pointer-events: none;
+  border: 2px solid #ffd166; border-radius: 8px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.68), 0 0 18px rgba(255, 209, 102, 0.5);
+  transition: left .22s ease, top .22s ease, width .22s ease, height .22s ease;
+}
+
+#tut-tip {
+  position: fixed; left: 0; top: 0; pointer-events: auto; z-index: 302;
+  width: min(330px, calc(100vw - 20px));
+  background: #16213e; border: 1px solid #ffd166; border-radius: 8px;
+  padding: 12px 14px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.65);
+  animation: tutIn .22s ease-out;
+}
+@keyframes tutIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.tut-step { color: #6b7794; font-size: 10.5px; letter-spacing: .6px; }
+.tut-title { color: #ffd166; font-weight: bold; font-size: 14px; margin: 4px 0 7px; }
+.tut-desc { color: #c9d1e4; font-size: 12.5px; line-height: 1.7; }
+.tut-desc b { color: #4cc9f0; }
+.tut-hint { margin-top: 9px; color: #7bdcff; font-size: 11.5px; }
+.tut-actions { display: flex; gap: 8px; margin-top: 11px; }
+.tut-actions button {
+  border: none; border-radius: 4px; font-size: 12.5px;
+  font-weight: bold; cursor: pointer; padding: 7px 12px;
+}
+.tut-next { flex: 1; background: #ffd166; color: #1a1a2e; }
+.tut-next:hover { background: #ffb703; }
+.tut-skip { flex: 0 0 auto; background: #263252; color: #8a93a8; }
+.tut-skip:hover { background: #33405f; color: #c9d1e4; }
+
+/* 走位步：把可达格描一圈金边 + 内侧发光，隔着遮罩也一眼看出"能走哪儿" */
+#board.tut-light .cell.moveable {
+  outline: 3px solid #ffd166;
+  outline-offset: -3px;
+  box-shadow: inset 0 0 12px rgba(255, 209, 102, 0.7);
+  z-index: 3;
+}
+
+/* 「重看新手引导」入口（说明弹窗里） */
+.help-modal .hp-link {
+  margin-top: 6px; color: #7bdcff; cursor: pointer;
+  text-decoration: underline dotted;
+}
+.help-modal .hp-link:hover { color: #ffd166; }
+
+/* ---- 队伍属性表（顶栏「队伍」按钮）---- */
+/* 单位详情不再靠长按 / 悬浮看：一张固定表格，点开一次全看得见。
+   每人两行：主属性 / 普攻·护甲·魔抗·技能·经验·状态。
+   横屏（高度只有 390）时整张表会超出屏幕 → 表格自己滚，标题和「关闭」按钮钉住。 */
+.modal.team-modal {
+  width: 92vw; max-width: 560px;
+  display: flex; flex-direction: column;
+  max-height: 92vh; overflow: hidden;
+}
+.modal.team-modal > h2 { font-size: 16px; margin-bottom: 4px; flex: 0 0 auto; }
+.tt-sub { color: #8b96b0; font-size: 11.5px; margin-bottom: 8px; flex: 0 0 auto; }
+.tt-wrap { overflow: auto; margin-bottom: 8px; flex: 1 1 auto; min-height: 0; }
+.modal.team-modal > .tt-tip,
+.modal.team-modal > .btn { flex: 0 0 auto; }
+table.tt { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.tt th {
+  color: #8ecae6; font-weight: normal; font-size: 11px;
+  background: #0f3460; border: 1px solid #1c4b7e;
+  padding: 4px 5px; white-space: nowrap;
+}
+table.tt td {
+  border: 1px solid #1c4b7e; padding: 5px;
+  color: #cfd6e4; text-align: center; white-space: nowrap;
+}
+table.tt td.tt-name { text-align: left; color: #ffd166; font-weight: bold; }
+table.tt td.tt-name em {
+  color: #7d879c; font-style: normal; font-size: 11px; margin-left: 4px;
+}
+/* 主角徽章（英雄）：一个金色小方块，不撑宽角色列 */
+table.tt td.tt-name .tt-hero {
+  display: inline-block; margin-right: 2px; padding: 0 2px;
+  border-radius: 3px; background: #ffd166; color: #101a30;
+  font-size: 9px; line-height: 13px; vertical-align: 1px;
+}
+table.tt tr.tt-u { background: #14213d; }
+table.tt tr.tt-d td {
+  background: #101a30; text-align: left; font-size: 11px;
+  color: #8a93a8; line-height: 1.65; white-space: normal;
+}
+.tt-k { color: #6b7794; }
+.tt-k::after { content: ' · '; color: #3b4763; }
+/* 法师的「攻击」格里附带法术强度：普攻 1，但地火按右边这个数结算 */
+table.tt td .tt-spell { color: #8ecae6; font-size: 10px; margin-left: 2px; }
+tr.tt-off td { opacity: 0.45; }
+.tt-ready { color: #7bffcf; font-style: normal; }
+.tt-done { color: #ffb703; font-style: normal; }
+.tt-dead { color: #ff5c8a; font-style: normal; }
+.tt-tip { color: #6b7794; font-size: 10.5px; line-height: 1.5; margin-bottom: 10px; }
+
+/* ============================================================
+   移动端适配（整页也压成一屏，不产生页面滚动）
+   窄屏布局：顶栏（两行）→ 棋盘（铺满）→ 行动栏
+   ============================================================ */
+@media (max-width: 860px) {
+  html { -webkit-text-size-adjust: 100%; }
+
+  /* 顶部安全区：手机上留一条纯装饰深色带（不承载任何信息），
+     摄像头 / 灵动岛只挡这一条，顶栏整体下移 */
+  #cam-safe {
+    display: block; position: fixed; left: 0; right: 0; top: 0;
+    height: max(env(safe-area-inset-top, 0px), 30px);
+    background: linear-gradient(180deg, #0e1324 0%, #111a30 62%, #1a1a2e 100%);
+    border-bottom: 1px solid rgba(76, 201, 240, 0.16);
+    z-index: 200; pointer-events: none;
+  }
+
+  body {
+    padding: calc(max(env(safe-area-inset-top, 0px), 30px) + 5px) 6px 6px;
+    height: 100vh; height: 100dvh;
+    overflow: hidden;
+    justify-content: flex-start;
+  }
+
+  /* 顶栏：两行——第一行信息（挑战次数 / 层 / 回合 / 金币 / 阶段），第二行按钮 */
+  #topbar {
+    gap: 4px 10px; padding: 4px 8px; margin-bottom: 5px;
+    font-size: 11px; justify-content: center; width: var(--bar-w);
+    flex-wrap: wrap; flex: 0 0 auto;
+  }
+  #topbar .tb-info {
+    flex: 1 0 100%; justify-content: center; gap: 10px; flex-wrap: wrap;
+  }
+  #topbar .tb-i { font-size: 11px; }
+  #topbar .tb-i b { font-size: 12.5px; }
+  /* 手机上信息行已经很挤：金币后面的「每回合 +N」收起（存档面板 / 回合日志里都能看） */
+  #topbar .tb-inc { display: none; }
+  #topbar button { padding: 4px 7px; font-size: 11px; }
+  #topbar .tb-btns {
+    flex: 1 0 100%; justify-content: center; gap: 4px; margin-top: 2px;
+  }
+
+  /* 行动栏：仍然固定高度单行，压缩内边距 */
+  #action-bar {
+    max-width: 100%; padding: 0 8px; gap: 5px;
+    margin: 0 0 5px; font-size: 11.5px; height: 36px;
+    flex: 0 0 auto;
+  }
+  #action-bar .act-group { gap: 4px; }
+  #action-bar .act-group button { padding: 7px 9px; font-size: 11px; }
+  #action-bar .shape-tag { font-size: 10.5px; padding: 0 5px; }
+  /* 窄屏（<=540）收起射程标签 / 森林提示 / 中间那句操作提示：
+     320 屏上那句提示只剩「点蓝格移动 …」四个字，纯浪费宽度，
+     空间全部让给三个按钮（铺满均分，指头按得准）；完整玩法在「说明」弹窗里。
+     541~860（横屏、小平板）不隐藏，按钮也不拉伸，宽度留给那句提示。 */
+  @media (max-width: 540px) {
+    #action-bar .shape-tag, #action-bar .hint-forest { display: none; }
+    #action-bar .hint:not(.ab-latest) { display: none; }
+    #action-bar .act-group { flex: 1 1 auto; justify-content: flex-end; }
+    #action-bar .act-group button { min-width: 46px; flex: 1 1 auto; }
+  }
+
+  /* 主区：只剩棋盘，吃掉剩余全部高度并居中 */
+  #main {
+    flex: 1 1 auto; min-height: 0; width: 100%;
+    align-items: flex-start; justify-content: center;
+  }
+  #board-col { width: 100%; }
+
+  /* 棋盘：宽度铺满，同时受屏高约束。
+     130px = 两行顶栏 + 行动栏 + 三道间距 + 预留余量；22px = 棋盘自己的 padding + 格间距；
+     12px = body 左右内边距（手机上是 6px×2）；再减掉顶部安全区（真全面屏 env() 可能 40+） */
+  :root {
+    --cell: clamp(24px,
+      min(calc((100vw - 12px - 22px) / 8),
+          calc((100dvh - 134px - 22px - max(env(safe-area-inset-top, 0px), 30px)) / 8)),
+      56px);
+  }
+
+  /* 队伍表格：320 屏也塞得下（六列 + 跨列的说明行） */
+  .modal.team-modal { width: 94vw; max-width: 94vw; padding: 14px; }
+  .modal.team-modal > h2 { font-size: 15px; }
+  table.tt { font-size: 11px; }
+  table.tt th { font-size: 10px; padding: 3px 3px; }
+  table.tt td { padding: 4px 3px; }
+  table.tt tr.tt-d td { font-size: 10px; }
+
+  /* 存档面板：手机上天赋行改两段（名字一行、说明一行） */
+  .meta-row { grid-template-columns: 18px 1fr; row-gap: 2px; }
+  .meta-desc { grid-column: 2; }
+  .meta-vault { font-size: 11.5px; }
+  .meta-foot { flex-wrap: wrap; }
+  .meta-foot .btn { padding: 7px 10px; font-size: 11.5px; }
+
+  /* 弹窗：按屏宽收缩，320 小屏也不溢出 */
+  .modal { min-width: 0; width: 92vw; max-width: 92vw; padding: 16px; }
+  .modal h2 { font-size: 16px; }
+  /* 三选一的金币按钮：320 屏两个并排也塞得下 */
+  .clr-buy { font-size: 11.5px; padding: 8px 6px 6px; }
+  .clr-buy i { font-size: 10.5px; }
+  /* 卡牌清单：窄屏改单列（卡名一行、说明一行） */
+  .modal.card-modal { min-width: 0; width: 92vw; max-width: 92vw; }
+  .card-modal .cl-row { grid-template-columns: 1fr; gap: 2px; padding: 6px 2px; }
+  .card-modal .cl-desc { font-size: 11.5px; }
+  .card-modal .cl-name { font-size: 12px; }
+  /* 日志 / 说明弹窗在手机上留更多内容高度 */
+  .modal.log-modal, .modal.help-modal { width: 94vw; max-width: 94vw; max-height: 82vh; }
+}
+
+/* 触摸设备：去掉点击蓝框 / 长按菜单，避免误选文字；消除双击缩放延迟 */
+@media (hover: none) {
+  body { -webkit-tap-highlight-color: transparent; }
+  #board-wrap, #action-bar, #topbar {
+    -webkit-touch-callout: none;
+    user-select: none; -webkit-user-select: none;
+  }
+  #board-wrap { touch-action: manipulation; }
+  /* 触摸没有 hover，别让悬停高亮残留 */
+  .cell.moveable:hover { background-color: #2d6a4f; }
+  .cell.attackable:hover { background-color: #9d0208; }
+}
+
+/* 手机横屏：高度极紧，顶栏压成一行，格子按屏高换算，
+   保证棋盘完整落在首屏内且不出现页面滚动 */
+@media (max-width: 900px) and (orientation: landscape) and (max-height: 540px) {
+  body { padding: 4px 6px; }
+  /* 横屏高度极紧：不留顶部安全区，把纵向空间全给棋盘 */
+  #cam-safe { display: none; }
+  #topbar { margin-bottom: 4px; padding: 3px 8px; font-size: 11px; flex: 0 0 auto; flex-wrap: nowrap; }
+  #topbar .tb-info { flex: 0 1 auto; gap: 9px; }
+  #topbar .tb-btns { flex: 0 0 auto; margin-top: 0; gap: 4px; }
+  #topbar button { padding: 3px 7px; font-size: 11px; }
+  #action-bar { margin: 0 0 4px; height: 30px; font-size: 11px; flex: 0 0 auto; }
+
+  #main { flex: 1 1 auto; min-height: 0; }
+  #board-col { width: auto; }
+
+  /* 横屏 body 内边距压到 6px，所以左右只扣 12px */
+  :root {
+    --cell: clamp(26px,
+      min(calc((100vw - 12px - 22px) / 8),
+          calc((100dvh - 86px - 22px) / 8)),
+      52px);
+  }
+}

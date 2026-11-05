@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1a1a2e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>战棋肉鸽</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- 顶部安全区：手机全面屏的摄像头 / 灵动岛会遮住最上面一条，
+     这里放一条纯装饰的深色带（不放任何信息），把顶栏整体压下来 -->
+<div id="cam-safe" aria-hidden="true"></div>
+
+<div id="topbar"></div>
+
+<!-- 行动栏在棋盘上方：原来贴在屏幕最底部，手机上大拇指够不到。
+     未选中单位时显示最新一条日志，选中后是「攻击 / 技能 / 待命」 -->
+<div id="action-bar"></div>
+
+<!-- 主区只剩棋盘：装备栏 / 日志栏 / 卡牌条都已撤出主界面，
+     分别收进顶栏的「队伍 / 卡牌 / 日志 / 说明」按钮 -->
+<div id="main">
+  <div id="board-col">
+    <div id="board-wrap">
+      <div id="board"></div>
+    </div>
+  </div>
+</div>
+
+<script src="core/config.js"></script>
+<script src="core/danmaku.js"></script>
+<script src="core/state.js"></script>
+<script src="core/utils.js"></script>
+<script src="core/audio.js"></script>
+<script src="core/meta.js"></script>
+<script src="core/save.js"></script>
+<script src="core/stats.js"></script>
+
+<script src="cards/pool.js"></script>
+<script src="cards/effects.js"></script>
+<script src="cards/ui.js"></script>
+
+<script src="battle/terrain.js"></script>
+<script src="battle/shape.js"></script>
+<script src="battle/board.js"></script>
+<script src="battle/combat.js"></script>
+<script src="battle/action.js"></script>
+<script src="battle/ai.js"></script>
+<script src="battle/turn.js"></script>
+
+<script src="ui/fx.js"></script>
+<script src="ui/topbar.js"></script>
+<script src="ui/buffBar.js"></script>
+<script src="ui/team.js"></script>
+<script src="ui/logPanel.js"></script>
+<script src="ui/encounter.js"></script>
+<script src="ui/modal.js"></script>
+<script src="ui/tutorial.js"></script>
+
+<!-- 弹幕层：普通流水在弹窗下面，结论大字（通关奖励等）在弹窗上面 -->
+<div id="danmaku-layer" aria-hidden="true"></div>
+<div id="danmaku-layer-top" aria-hidden="true"></div>
+
+<script src="main.js"></script>
+
+</body>
+</html>
