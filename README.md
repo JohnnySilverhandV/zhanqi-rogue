@@ -2,11 +2,9 @@
 
 一个**零依赖、零构建**的纯前端战棋肉鸽：8×8 棋盘上带着四人小队逐层爬塔，每 5 层一个魔王，杀到第 99 层通关。WebAudio 实时合成音效、CSS+emoji 视觉，没有任何图片素材。
 
-> 🎮 **在线直接玩（国内直连）**：<https://zhanqi-rogue.app.workbuddy.host/>
+> 🌐 **GitHub Pages 在线玩**：<https://johnnysilverhandv.github.io/zhanqi-rogue/>
 >
-> 🌐 **GitHub Pages**：<https://johnnysilverhandv.github.io/zhanqi-rogue/>
->
-> 📦 **离线版下载**：[GitHub Releases](https://github.com/JohnnySilverhandV/zhanqi-rogue/releases) ｜ [码云 Releases](https://gitee.com/johnny-silver-hand123/zhanqi-rogue/releases)
+> 📦 **离线版下载**：[GitHub Releases](https://github.com/JohnnySilverhandV/zhanqi-rogue/releases) ｜ [码云 Releases](https://gitee.com/johnny-silver-hand123/zhanqi-rogue/releases)（单文件 HTML，解压双击即玩）
 
 ## 源码仓库
 
@@ -21,7 +19,7 @@
 
 ### v1.1.0 — 首个双端发布版（2026-11-05）
 
-- 仓库公开化：GitHub 同名建仓 + 双推 + 双平台 Release
+- 仓库公开化：GitHub 同名建仓 + 双推 + 双平台 Release + GitHub Pages
 - `build-single.js` 去掉写死桌面的输出路径，改为 `OUT` 环境变量（默认 `build/`，已 gitignore）
 - 补 README（本文件）与 MIT LICENSE
 - 游戏本体与 v1 一致：第六轮改造（主角换英雄 + 杀 boss 即通 + 单文件发布）
