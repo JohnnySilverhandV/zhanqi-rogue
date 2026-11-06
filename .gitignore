@@ -1,4 +1,5 @@
 node_modules/
+build/
 _*.html
 _*.png
 _*.txt

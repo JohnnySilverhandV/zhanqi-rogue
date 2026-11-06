@@ -4,16 +4,22 @@
 //
 // 一次产出两个包（都来自同一份源码，只差一层「体型微调」样式）：
 //   · 战棋肉鸽-手机版.html   竖屏手机优先，顶部预留摄像头安全区
-//   · 战棋肉鸽-电脑版.html   棋盘更大（格子上限 66px），日志栏更宽
+//   · 战棋肉鸽-电脑版.html   棋盘更大（格子上限 80px），日志栏更宽
+//   同时产出 dist/index.html（发布用，标题不带后缀）
 //
-// 用法：node build-single.js
+// 用法：
+//   node build-single.js                  两个包写进 ./build/（已 gitignore）
+//   OUT=~/Desktop node build-single.js    直接写桌面（Windows 用 OUT=%USERPROFILE%/Desktop）
 // ============================================================
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 
 const ROOT = __dirname;
-const DESKTOP_DIR = path.join(os.homedir(), 'Desktop');
+
+// 单文件包的输出目录：默认仓库内 build/，用 OUT 环境变量可改（桌面、网盘都行）
+const OUT_DIR = process.env.OUT
+  ? path.resolve(process.env.OUT.replace(/^~(?=$|[\\/])/, require('os').homedir()))
+  : path.join(ROOT, 'build');
 
 // 内联 JS 时避免正文里的 </script 提前闭合（JS 里 <\/script 等价）
 function safe(code) {
@@ -79,13 +85,15 @@ const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
 // 分享用：dist/index.html = 电脑版（大屏放大、小屏自动退回手机布局，两端都能玩）
 const DIST_DIR = path.join(ROOT, 'dist');
 
+if (!fs.existsSync(OUT_DIR)) fs.mkdirSync(OUT_DIR, { recursive: true });
+
 VARIANTS.forEach(v => {
   let html = base;
   if (v.css) html = html.replace('</head>', `<style id="variant-tweaks">${v.css}</style>\n</head>`);
   html = html.replace('<title>战棋肉鸽</title>',
     `<title>${v.title}</title>\n<!-- single-file build: ${stamp} -->`);
 
-  const out = path.join(DESKTOP_DIR, v.file);
+  const out = path.join(OUT_DIR, v.file);
   fs.writeFileSync(out, html, 'utf8');
   const kb = (Buffer.byteLength(html, 'utf8') / 1024).toFixed(1);
   console.log(`✓ ${v.file}  ${kb} KB`);
