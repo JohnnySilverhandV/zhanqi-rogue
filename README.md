@@ -2,7 +2,9 @@
 
 一个**零依赖、零构建**的纯前端战棋肉鸽：8×8 棋盘上带着四人小队逐层爬塔，每 5 层一个魔王，杀到第 99 层通关。WebAudio 实时合成音效、CSS+emoji 视觉，没有任何图片素材。
 
-> 🌐 **GitHub Pages 在线玩**：<https://johnnysilverhandv.github.io/zhanqi-rogue/>
+> 🎮 **在线直接玩（国内直连）**：<https://zhanqi-rogue.app.workbuddy.host/?sharecode=2LPYC3XOMV>
+>
+> 🌐 **GitHub Pages**：<https://johnnysilverhandv.github.io/zhanqi-rogue/>
 >
 > 📦 **离线版下载**：[GitHub Releases](https://github.com/JohnnySilverhandV/zhanqi-rogue/releases) ｜ [码云 Releases](https://gitee.com/johnny-silver-hand123/zhanqi-rogue/releases)（单文件 HTML，解压双击即玩）
 
